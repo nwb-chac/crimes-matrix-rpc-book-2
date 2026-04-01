@@ -231,6 +231,45 @@ body.edit-mode td[data-editable] [contenteditable]:focus {
 .sync-status.saving  { background: #1e3a5f; color: #60a5fa; }
 .sync-status.offline { background: #450a0a; color: #f87171; }
 
+
+/* PASSWORD MODAL */
+.modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.75); z-index: 9999;
+  align-items: center; justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal-box {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 28px 32px; width: 320px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  display: flex; flex-direction: column; gap: 14px;
+}
+.modal-box h3 { color: var(--accent); font-size: 16px; margin: 0; }
+.modal-box p  { color: var(--text2); font-size: 12px; margin: 0; }
+.modal-box input[type="password"] {
+  width: 100%; padding: 9px 12px;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text); font-size: 14px;
+  outline: none; transition: border-color .2s;
+}
+.modal-box input[type="password"]:focus { border-color: var(--accent); }
+.modal-error { color: #f87171; font-size: 12px; display: none; }
+.modal-error.show { display: block; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.modal-confirm {
+  padding: 7px 18px; border-radius: 6px;
+  background: var(--accent); color: #fff;
+  border: none; cursor: pointer; font-size: 13px; font-weight: 600;
+}
+.modal-confirm:hover { opacity: 0.85; }
+.modal-cancel {
+  padding: 7px 14px; border-radius: 6px;
+  background: var(--bg3); color: var(--text2);
+  border: 1px solid var(--border); cursor: pointer; font-size: 13px;
+}
+.modal-cancel:hover { background: var(--border); }
+
 </style>
 
 <!-- Firebase -->
@@ -281,6 +320,21 @@ body.edit-mode td[data-editable] [contenteditable]:focus {
 </head>
 <body>
 
+
+<!-- Password Modal -->
+<div class="modal-overlay" id="passwordModal">
+  <div class="modal-box">
+    <h3>🔐 Editor Access</h3>
+    <p>Enter the editor password to enable edit mode.</p>
+    <input type="password" id="passwordInput" placeholder="Password" />
+    <div class="modal-error" id="passwordError">Incorrect password. Try again.</div>
+    <div class="modal-actions">
+      <button class="modal-cancel" onclick="closePasswordModal()">Cancel</button>
+      <button class="modal-confirm" onclick="submitPassword()">Unlock</button>
+    </div>
+  </div>
+</div>
+
 <div class="top-bar">
   <h1>🇵🇭 RPC Book II — <span>Complete Criminal Law Memory-Aid Matrix</span></h1>
   <div class="subtitle">Arts. 114–365 | Based on Campanilla's Criminal Law Reviewer | Philippine Bar Examination Reference</div>
@@ -301,8 +355,8 @@ body.edit-mode td[data-editable] [contenteditable]:focus {
   <button class="export-btn" onclick="exportCSV()">⬇ Export CSV</button>
   <button class="print-btn" onclick="window.print()">🖨 Print</button>
   <span class="sync-status synced" id="syncStatus">● Live</span>
-  <button class="edit-btn" id="editBtn" onclick="toggleEditMode()">✏️ Edit Mode</button>
-  <button class="print-btn" id="resetBtn" onclick="resetEdits()" title="Clear all saved edits">↩ Reset Edits</button>
+  <button class="edit-btn" id="editBtn" onclick="requestEditMode()">✏️ Edit Mode</button>
+  <button class="print-btn" id="resetBtn" onclick="resetEdits()" title="Clear all saved edits" style="display:none">↩ Reset Edits</button>
 </div>
 
 <div class="filters" id="filterBar">
@@ -2731,6 +2785,53 @@ function exportCSV() {
 // EDIT MODE with Firebase Realtime Database sync
 let editMode = false;
 let saveTimer = null;
+let isAuthorized = false;
+
+// ── PASSWORD CONFIG ──────────────────────────────────────────
+// Change this to your desired password (stored as a SHA-256 hash).
+// To generate a new hash: open browser console and run:
+//   crypto.subtle.digest('SHA-256', new TextEncoder().encode('yourpassword'))
+//     .then(b => console.log([...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')))
+const CORRECT_HASH = '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918'; // = 'admin'
+// ─────────────────────────────────────────────────────────────
+
+async function hashPassword(pw) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pw));
+  return [...new Uint8Array(buf)].map(x => x.toString(16).padStart(2,'0')).join('');
+}
+
+function requestEditMode() {
+  if (isAuthorized) { toggleEditMode(); return; }
+  document.getElementById('passwordModal').classList.add('open');
+  setTimeout(() => document.getElementById('passwordInput').focus(), 50);
+}
+
+function closePasswordModal() {
+  document.getElementById('passwordModal').classList.remove('open');
+  document.getElementById('passwordInput').value = '';
+  document.getElementById('passwordError').classList.remove('show');
+}
+
+async function submitPassword() {
+  const pw = document.getElementById('passwordInput').value;
+  const hash = await hashPassword(pw);
+  if (hash === CORRECT_HASH) {
+    isAuthorized = true;
+    closePasswordModal();
+    document.getElementById('resetBtn').style.display = 'inline-block';
+    toggleEditMode();
+  } else {
+    document.getElementById('passwordError').classList.add('show');
+    document.getElementById('passwordInput').value = '';
+    document.getElementById('passwordInput').focus();
+  }
+}
+
+// Allow Enter key to submit
+document.getElementById('passwordInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') submitPassword();
+  if (e.key === 'Escape') closePasswordModal();
+});
 
 // Show sync indicator
 function showSyncStatus(state) {
