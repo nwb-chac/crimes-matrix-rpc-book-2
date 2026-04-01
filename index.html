@@ -190,6 +190,44 @@ td {
   transition: background .2s;
 }
 .print-btn:hover { background: var(--border); }
+
+/* EDIT MODE */
+.edit-btn {
+  padding: 6px 14px; border-radius: 6px;
+  background: var(--orange); color: #fff;
+  border: none; cursor: pointer; font-size: 12px; font-weight: 600;
+  transition: all .2s;
+}
+.edit-btn.active { background: #c0392b; }
+.save-html-btn {
+  padding: 6px 14px; border-radius: 6px;
+  background: var(--accent2); color: #fff;
+  border: none; cursor: pointer; font-size: 12px; font-weight: 600;
+  display: none; transition: opacity .2s;
+}
+.save-html-btn:hover { opacity: 0.85; }
+.edit-notice {
+  display: none;
+  background: #2d1f00; border: 1px solid var(--orange);
+  color: #fbbf24; font-size: 11px; padding: 6px 16px;
+  text-align: center; letter-spacing: 0.3px;
+}
+body.edit-mode .edit-notice { display: block; }
+body.edit-mode .save-html-btn { display: inline-block; }
+body.edit-mode .edit-btn { background: #c0392b; }
+body.edit-mode td[data-editable] {
+  cursor: text;
+  outline: 1px dashed #f59e0b44;
+}
+body.edit-mode td[data-editable]:hover {
+  outline: 1px solid var(--orange);
+  background: #2d1f0022;
+}
+body.edit-mode td[data-editable]:focus,
+body.edit-mode td[data-editable] [contenteditable]:focus {
+  outline: 2px solid var(--orange);
+}
+[contenteditable] { outline: none; }
 </style>
 </head>
 <body>
@@ -204,6 +242,7 @@ td {
     <div class="stat"><strong>50+</strong> Key Doctrines & Cases</div>
   </div>
 </div>
+<div class="edit-notice">✏️ Edit Mode — Click any cell to edit its content. Click <strong>Save HTML</strong> to download the updated file.</div>
 
 <div class="controls">
   <div class="search-wrap">
@@ -212,6 +251,8 @@ td {
   <div class="count-badge" id="countBadge">Showing all 193 entries</div>
   <button class="export-btn" onclick="exportCSV()">⬇ Export CSV</button>
   <button class="print-btn" onclick="window.print()">🖨 Print</button>
+  <button class="edit-btn" id="editBtn" onclick="toggleEditMode()">✏️ Edit Mode</button>
+  <button class="save-html-btn" id="saveHtmlBtn" onclick="saveHTML()">💾 Save HTML</button>
 </div>
 
 <div class="filters" id="filterBar">
@@ -2636,6 +2677,52 @@ function exportCSV() {
   a.download = 'rpc_book2_matrix.csv';
   a.click();
 }
+
+// EDIT MODE
+let editMode = false;
+
+function toggleEditMode() {
+  editMode = !editMode;
+  document.body.classList.toggle('edit-mode', editMode);
+  document.getElementById('editBtn').textContent = editMode ? '✖ Exit Edit Mode' : '✏️ Edit Mode';
+
+  // Make cells editable/non-editable
+  const allCells = document.querySelectorAll('#tableBody td');
+  allCells.forEach((td, i) => {
+    const colIndex = td.cellIndex;
+    if (colIndex < 2) return; // skip Title and Art# columns
+    if (editMode) {
+      td.setAttribute('contenteditable', 'true');
+      td.setAttribute('data-editable', '1');
+      // Also make inner .cell-scroll divs editable
+      const inner = td.querySelector('.cell-scroll');
+      if (inner) {
+        inner.setAttribute('contenteditable', 'true');
+        td.removeAttribute('contenteditable');
+      }
+    } else {
+      td.removeAttribute('contenteditable');
+      td.removeAttribute('data-editable');
+      const inner = td.querySelector('.cell-scroll');
+      if (inner) inner.removeAttribute('contenteditable');
+    }
+  });
+}
+
+function saveHTML() {
+  // Exit edit mode first to clean up contenteditable attrs
+  if (editMode) toggleEditMode();
+
+  // Get full page HTML
+  const doctype = '<!DOCTYPE html>\n';
+  const html = document.documentElement.outerHTML;
+  const blob = new Blob([doctype + html], { type: 'text/html' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'rpc_book2_matrix_edited.html';
+  a.click();
+}
+
 </script>
 </body>
 </html>
