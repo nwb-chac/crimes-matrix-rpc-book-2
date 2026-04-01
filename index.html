@@ -84,7 +84,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 .filter-btn.active { background: var(--accent2); color: #fff; border-color: var(--accent2); }
 
 /* TABLE */
-.table-wrap { overflow-x: auto; }
+.table-wrap { overflow: auto; height: calc(100vh - 164px); }
 table {
   width: 100%; border-collapse: collapse;
   table-layout: fixed;
@@ -113,7 +113,7 @@ thead th {
   color: var(--text2);
   border-bottom: 2px solid var(--accent);
   border-right: 1px solid var(--border);
-  position: sticky; top: 164px; z-index: 97;
+  position: sticky; top: 0; z-index: 97;
   white-space: nowrap;
   cursor: pointer;
   user-select: none;
@@ -220,6 +220,12 @@ td {
 
 <div class="table-wrap">
 <table id="mainTable">
+<colgroup>
+  <col class="col-title"><col class="col-art"><col class="col-name">
+  <col class="col-prov"><col class="col-elem"><col class="col-gen">
+  <col class="col-exc"><col class="col-exc2"><col class="col-mnem">
+  <col class="col-doct"><col class="col-spl">
+</colgroup>
 <thead>
   <tr>
     <th data-col="0">Title</th>
@@ -235,12 +241,6 @@ td {
     <th data-col="10">Special Penal Laws</th>
   </tr>
 </thead>
-  <colgroup>
-  <col class="col-title"><col class="col-art"><col class="col-name">
-  <col class="col-prov"><col class="col-elem"><col class="col-gen">
-  <col class="col-exc"><col class="col-exc2"><col class="col-mnem">
-  <col class="col-doct"><col class="col-spl">
-</colgroup>
 <tbody id="tableBody">
 <tr data-title="I" data-search="114 Treason 1. Offender is a Filipino citizen or resident alien; 2. There is a war in which the Philippines is involved; 3. Offender either: (a) levies war against the Government, or (b) adheres to enemies, giving them aid or comfort Doctrine of Allegiance (Laurel v. Misa, 77 Phil 856): Filipino's allegiance is not suspended by enemy occupation; two-witness rule is a substantive requirement, not merely procedural RA 11479 (Anti-Terrorism Act of 2020), Sec. 9: Terrorism distinct from treason but may overlap">
   <td class="col-title"><span class="title-badge">Title I</span><br><small>CRIMES AGAINST NATIONAL SECURITY AND THE LAW OF NATIONS</small></td>
