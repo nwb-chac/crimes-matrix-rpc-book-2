@@ -2891,6 +2891,12 @@ function toggleEditMode() {
       target.removeEventListener('input', onCellInput);
     }
   });
+
+  // When exiting edit mode, revoke authorization — password required again next time
+  if (!editMode) {
+    isAuthorized = false;
+    document.getElementById('resetBtn').style.display = 'none';
+  }
 }
 
 // Reset all edits in Firebase
