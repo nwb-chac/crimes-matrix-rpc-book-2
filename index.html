@@ -199,13 +199,7 @@ td {
   transition: all .2s;
 }
 .edit-btn.active { background: #c0392b; }
-.save-html-btn {
-  padding: 6px 14px; border-radius: 6px;
-  background: var(--accent2); color: #fff;
-  border: none; cursor: pointer; font-size: 12px; font-weight: 600;
-  display: none; transition: opacity .2s;
-}
-.save-html-btn:hover { opacity: 0.85; }
+
 .edit-notice {
   display: none;
   background: #2d1f00; border: 1px solid var(--orange);
@@ -213,7 +207,6 @@ td {
   text-align: center; letter-spacing: 0.3px;
 }
 body.edit-mode .edit-notice { display: block; }
-body.edit-mode .save-html-btn { display: inline-block; }
 body.edit-mode .edit-btn { background: #c0392b; }
 body.edit-mode td[data-editable] {
   cursor: text;
@@ -228,7 +221,63 @@ body.edit-mode td[data-editable] [contenteditable]:focus {
   outline: 2px solid var(--orange);
 }
 [contenteditable] { outline: none; }
+
+/* SYNC STATUS */
+.sync-status {
+  font-size: 11px; padding: 3px 10px; border-radius: 10px;
+  font-weight: 600; white-space: nowrap; transition: all .3s;
+}
+.sync-status.synced  { background: #14532d; color: #4ade80; }
+.sync-status.saving  { background: #1e3a5f; color: #60a5fa; }
+.sync-status.offline { background: #450a0a; color: #f87171; }
+
 </style>
+
+<!-- Firebase -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getDatabase, ref, onValue, update, get } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyB9rAIxt4G1YEoZJtGriv-bKrRNLbS8fAs",
+    authDomain: "rpc-matrix-book-2.firebaseapp.com",
+    databaseURL: "https://rpc-matrix-book-2-default-rtdb.firebaseio.com",
+    projectId: "rpc-matrix-book-2",
+    storageBucket: "rpc-matrix-book-2.firebasestorage.app",
+    messagingSenderId: "385513674332",
+    appId: "1:385513674332:web:aa8a5a48e02491977cf899",
+    measurementId: "G-0HCRWXKKNV"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+  const editsRef = ref(db, 'edits');
+
+  // Expose to window so non-module scripts can call these
+  window._fbDb = db;
+  window._fbRef = editsRef;
+  window._fbUpdate = update;
+  window._fbGet = get;
+  window._fbOnValue = onValue;
+  window._fbRef2 = ref;
+  window._fbReady = true;
+
+  // Listen for remote changes and apply to cells in real-time
+  onValue(editsRef, (snapshot) => {
+    const edits = snapshot.val();
+    if (!edits) return;
+    let isEditing = document.body.classList.contains('edit-mode');
+    Object.entries(edits).forEach(([id, html]) => {
+      const el = document.querySelector(`[data-cell-id="${id}"]`);
+      // Don't overwrite a cell currently being edited
+      if (el && !(isEditing && document.activeElement === el)) {
+        el.innerHTML = html;
+      }
+    });
+    showSyncStatus('synced');
+  });
+</script>
+
 </head>
 <body>
 
@@ -242,7 +291,7 @@ body.edit-mode td[data-editable] [contenteditable]:focus {
     <div class="stat"><strong>50+</strong> Key Doctrines & Cases</div>
   </div>
 </div>
-<div class="edit-notice">✏️ Edit Mode — Click any cell to edit its content. Click <strong>Save HTML</strong> to download the updated file.</div>
+<div class="edit-notice">✏️ Edit Mode — Click any cell to edit. Changes are <strong>auto-saved</strong> to your browser's local storage and persist across refreshes.</div>
 
 <div class="controls">
   <div class="search-wrap">
@@ -251,8 +300,9 @@ body.edit-mode td[data-editable] [contenteditable]:focus {
   <div class="count-badge" id="countBadge">Showing all 193 entries</div>
   <button class="export-btn" onclick="exportCSV()">⬇ Export CSV</button>
   <button class="print-btn" onclick="window.print()">🖨 Print</button>
+  <span class="sync-status synced" id="syncStatus">● Live</span>
   <button class="edit-btn" id="editBtn" onclick="toggleEditMode()">✏️ Edit Mode</button>
-  <button class="save-html-btn" id="saveHtmlBtn" onclick="saveHTML()">💾 Save HTML</button>
+  <button class="print-btn" id="resetBtn" onclick="resetEdits()" title="Clear all saved edits">↩ Reset Edits</button>
 </div>
 
 <div class="filters" id="filterBar">
@@ -2678,50 +2728,81 @@ function exportCSV() {
   a.click();
 }
 
-// EDIT MODE
+// EDIT MODE with Firebase Realtime Database sync
 let editMode = false;
+let saveTimer = null;
+
+// Show sync indicator
+function showSyncStatus(state) {
+  const el = document.getElementById('syncStatus');
+  if (!el) return;
+  if (state === 'synced') { el.textContent = '● Live'; el.className = 'sync-status synced'; }
+  else if (state === 'saving') { el.textContent = '↑ Saving…'; el.className = 'sync-status saving'; }
+  else if (state === 'offline') { el.textContent = '✕ Offline'; el.className = 'sync-status offline'; }
+}
+
+// Assign stable IDs to every editable cell
+function assignCellIds() {
+  const allRows = document.querySelectorAll('#tableBody tr');
+  allRows.forEach((row, ri) => {
+    Array.from(row.cells).forEach((td, ci) => {
+      if (ci < 2) return;
+      const inner = td.querySelector('.cell-scroll');
+      const target = inner || td;
+      target.dataset.cellId = `r${ri}c${ci}`;
+    });
+  });
+}
+
+// Debounced save to Firebase — waits 800ms after last keystroke
+function onCellInput(e) {
+  const cellId = e.target.dataset.cellId;
+  if (!cellId) return;
+  showSyncStatus('saving');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    if (!window._fbReady) { showSyncStatus('offline'); return; }
+    const updates = {};
+    updates[cellId] = e.target.innerHTML;
+    window._fbUpdate(window._fbRef2(window._fbDb, 'edits'), updates)
+      .then(() => showSyncStatus('synced'))
+      .catch(() => showSyncStatus('offline'));
+  }, 800);
+}
 
 function toggleEditMode() {
   editMode = !editMode;
   document.body.classList.toggle('edit-mode', editMode);
   document.getElementById('editBtn').textContent = editMode ? '✖ Exit Edit Mode' : '✏️ Edit Mode';
 
-  // Make cells editable/non-editable
   const allCells = document.querySelectorAll('#tableBody td');
-  allCells.forEach((td, i) => {
-    const colIndex = td.cellIndex;
-    if (colIndex < 2) return; // skip Title and Art# columns
+  allCells.forEach(td => {
+    if (td.cellIndex < 2) return;
+    const inner = td.querySelector('.cell-scroll');
+    const target = inner || td;
     if (editMode) {
-      td.setAttribute('contenteditable', 'true');
+      target.setAttribute('contenteditable', 'true');
       td.setAttribute('data-editable', '1');
-      // Also make inner .cell-scroll divs editable
-      const inner = td.querySelector('.cell-scroll');
-      if (inner) {
-        inner.setAttribute('contenteditable', 'true');
-        td.removeAttribute('contenteditable');
-      }
+      target.addEventListener('input', onCellInput);
     } else {
-      td.removeAttribute('contenteditable');
+      target.removeAttribute('contenteditable');
       td.removeAttribute('data-editable');
-      const inner = td.querySelector('.cell-scroll');
-      if (inner) inner.removeAttribute('contenteditable');
+      target.removeEventListener('input', onCellInput);
     }
   });
 }
 
-function saveHTML() {
-  // Exit edit mode first to clean up contenteditable attrs
-  if (editMode) toggleEditMode();
-
-  // Get full page HTML
-  const doctype = '<!DOCTYPE html>\n';
-  const html = document.documentElement.outerHTML;
-  const blob = new Blob([doctype + html], { type: 'text/html' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'rpc_book2_matrix_edited.html';
-  a.click();
+// Reset all edits in Firebase
+function resetEdits() {
+  if (!confirm('Reset ALL edits and restore original content for ALL devices? This cannot be undone.')) return;
+  if (!window._fbReady) { alert('Firebase not ready yet, try again.'); return; }
+  window._fbUpdate(window._fbRef2(window._fbDb, ''), { edits: null })
+    .then(() => location.reload())
+    .catch(() => alert('Reset failed. Check Firebase connection.'));
 }
+
+// Init
+assignCellIds();
 
 </script>
 </body>
